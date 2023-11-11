@@ -1,0 +1,63 @@
+cabal-version: 3.0
+name:          cosmic-express-solver
+version:       0.1.0.0
+tested-with:   GHC ==9.4.7
+
+common options
+  build-depends:
+    , base    ==4.17.2.0
+    , relude  ==1.2.1.0
+
+  default-language:   GHC2021
+  default-extensions:
+    NoImplicitPrelude
+    DataKinds
+    DefaultSignatures
+    DeriveAnyClass
+    DerivingStrategies
+    DerivingVia
+    DuplicateRecordFields
+    EmptyDataDeriving
+    ExplicitNamespaces
+    GeneralizedNewtypeDeriving
+    LambdaCase
+    MultiWayIf
+    NoFieldSelectors
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+    QuasiQuotes
+    RecordWildCards
+    StrictData
+    TemplateHaskell
+    TypeFamilies
+
+  ghc-options:
+    -Wall -Wincomplete-uni-patterns -Wcompat
+    -Wincomplete-record-updates -Wmissing-home-modules
+    -Wmissing-export-lists -Wredundant-constraints
+
+library
+  import:          options
+  build-depends:
+    , grid               ==7.8.15
+    , pretty-terminal    ==0.1.0.0
+    , search-algorithms  ==0.3.2
+
+  hs-source-dirs:  src
+
+  -- cabal-fmt: expand src
+  exposed-modules:
+    Games.CosmicExpress.Levels
+    Games.CosmicExpress.Levels.Andromeda
+    Games.CosmicExpress.Solve
+
+executable cosmic-solver
+  import:         options
+  ghc-options:    -threaded
+  build-depends:  cosmic-express-solver
+  hs-source-dirs: cmd/cosmic-solver
+  main-is:        Main.hs
+
+  -- cabal-fmt: expand cmd/cosmic-solver -Main
+  other-modules:
