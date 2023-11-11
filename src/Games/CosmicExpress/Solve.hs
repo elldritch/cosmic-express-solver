@@ -2,7 +2,7 @@ module Games.CosmicExpress.Solve (solve) where
 
 import Relude
 
-import Algorithm.Search (aStarAssoc)
+import Algorithm.Search (aStarAssoc, bfs)
 import Games.CosmicExpress.Levels (Color (..), Level (..), Orientation (..), Position, Tile (..), columns, grid, renderLevel)
 import Math.Geometry.Grid (distance, neighbour, neighbours)
 import Math.Geometry.Grid.SquareInternal (SquareDirection (..))
@@ -40,20 +40,27 @@ data Step = Step
   }
   deriving (Eq, Ord, Show)
 
+debug :: (Show a) => String -> a -> a
+debug prefix a = trace (prefix <> ": " <> show a) a
+
+debugLen :: String -> [a] -> [a]
+debugLen prefix a = trace (prefix <> ": " <> show (length a)) a
+
 debugStep :: String -> Step -> Step
 debugStep prefix s = debugStep' prefix s s
 
-{- FOURMOLU_DISABLE -}
 debugStep' :: String -> Step -> a -> a
-debugStep' prefix s@Step{level, tip, facing, train} a = trace msg a
-  where
-    msg =
-      prefix ++ ": " ++ show s ++ "\n" ++
-      renderLevel level ++ "\n" ++
-      "Train: " ++ show train ++ "\n" ++
-      "Tip: " ++ show tip ++ "\n" ++
-      "Facing: " ++ show facing ++ "\n" ++
-      "Heuristic: " ++ show (heuristic s) ++ "\n"
+debugStep' prefix s a = trace (debugStepMsg prefix s) a
+
+{- FOURMOLU_DISABLE -}
+debugStepMsg :: String -> Step -> String
+debugStepMsg prefix s@Step{level, tip, facing, train} =
+  prefix ++ ": " ++ show s ++ "\n" ++
+  renderLevel level ++ "\n" ++
+  "Train: " ++ show train ++ "\n" ++
+  "Tip: " ++ show tip ++ "\n" ++
+  "Facing: " ++ show facing ++ "\n" ++
+  "Heuristic: " ++ show (heuristic s) ++ "\n"
 {- FOURMOLU_ENABLE -}
 
 solve :: Level -> Level
@@ -110,103 +117,120 @@ solve startLevel@Level{start, finish} = case solution of
   --    into the train and mark the critter as completed.
   --
   -- Note that A* also requires a cost for every step. The cost is always 1.
-  next :: Step -> [(Step, Int)]
-  next currentStep@Step{level = currentLevel@Level{tiles = currentTiles}, tip = currentTip, facing = (Direction facing)} = (,1) <$> nextSteps
-   where
-    trackPiece :: SquareDirection -> Orientation
-    trackPiece nextDirection = case facing of
-      North -> case nextDirection of
-        North -> NS
-        East -> SE
-        West -> SW
-        South -> doublesBack
-      East -> case nextDirection of
-        North -> NW
-        East -> EW
-        West -> doublesBack
-        South -> SW
-      South -> case nextDirection of
-        North -> doublesBack
-        East -> NE
-        West -> NW
-        South -> NS
-      West -> case nextDirection of
-        North -> NE
-        East -> doublesBack
-        West -> EW
-        South -> SE
+  next :: Step -> [Step]
+  next
+    currentStep@Step
+      { level = currentLevel@Level{tiles = currentTiles}
+      , tip = currentTip
+      , facing = (Direction facing)
+      } = debugNexts nextSteps
      where
-      doublesBack = error "Impossible: track piece doubles back on itself"
+      debugNexts :: [Step] -> [Step]
+      debugNexts nexts = trace msg nexts
+        where
+          msg =
+            debugStepMsg "Current" currentStep ++ "\n"
+            ++ "Nexts: " ++ show (length nexts) ++ "\n"
+            ++ concat [ debugStepMsg ("Next " <> show i) n | (i, n) <- zip ([1..] :: [Int]) nexts]
 
-    nextPositions :: [Step]
-    nextPositions = do
-      -- Special case: if the current tip is the end tile, but objectives are
-      -- still incomplete, then this track is obviously impossible.
-      guard $ not (currentTip == end && not (all delivered (elems currentTiles)))
-      -- Choose a direction to go in.
-      direction <- directions
-      -- Make sure the next position is still within the grid.
-      position <- maybeToList $ neighbour grid currentTip direction
-      -- Make sure the next position is unoccupied.
-      guard $ not $ member position currentTiles
+      trackPiece :: SquareDirection -> Orientation
+      trackPiece nextDirection = case facing of
+        North -> case nextDirection of
+          North -> NS
+          East -> SE
+          West -> SW
+          South -> doublesBack
+        East -> case nextDirection of
+          North -> NW
+          East -> EW
+          West -> doublesBack
+          South -> SW
+        South -> case nextDirection of
+          North -> doublesBack
+          East -> NE
+          West -> NW
+          South -> NS
+        West -> case nextDirection of
+          North -> NE
+          East -> doublesBack
+          West -> EW
+          South -> SE
+       where
+        doublesBack = error "Impossible: track piece doubles back on itself"
 
-      pure
-        currentStep
-          { level = currentLevel{tiles = insert currentTip (Track $ trackPiece direction) currentTiles}
-          , tip = position
-          , facing = Direction direction
-          }
+      nextPositions :: [Step]
+      nextPositions = do
+        -- Special case: if the current tip is the end tile, but objectives are
+        -- still incomplete, then this track is obviously impossible.
+        guard $ not (currentTip == end && not (all delivered (elems currentTiles)))
+        -- Choose a direction to go in.
+        direction <- directions
+        -- Make sure the next position is still within the grid.
+        position <- maybeToList $ neighbour grid currentTip direction
+        -- Make sure the next position is unoccupied.
+        guard $ not $ member position currentTiles
 
-    neighborCritters :: [(Position, Color)]
-    neighborCritters = mapMaybe critterLookup (neighbours grid currentTip)
-     where
-      critterLookup :: Position -> Maybe (Position, Color)
-      critterLookup p = case lookup p currentTiles of
-        Just (Critter c False) -> Just (p, c)
-        _ -> Nothing
+        pure
+          currentStep
+            { level = currentLevel{tiles = insert currentTip (Track $ trackPiece direction) currentTiles}
+            , tip = position
+            , facing = Direction direction
+            }
 
-    neighborHouses :: Color -> [Position]
-    neighborHouses c = filter hasHouse (neighbours grid currentTip)
-     where
-      hasHouse :: Position -> Bool
-      hasHouse p = case lookup p currentTiles of
-        Just (House h False) -> h == c
-        _ -> False
+      neighborCritters :: [(Position, Color)]
+      neighborCritters = mapMaybe critterLookup (neighbours grid currentTip)
+       where
+        critterLookup :: Position -> Maybe (Position, Color)
+        critterLookup p = case lookup p currentTiles of
+          Just (Critter c False) -> Just (p, c)
+          _ -> Nothing
 
-    nextSteps :: [Step]
-    nextSteps = do
-      -- Take a step into the next position.
-      step@Step{level = level@Level{tiles}, train} <- nextPositions
+      neighborHouses :: Color -> [Position]
+      neighborHouses c = filter hasHouse (neighbours grid currentTip)
+       where
+        hasHouse :: Position -> Bool
+        hasHouse p = case lookup p currentTiles of
+          Just (House h False) -> h == c
+          _ -> False
 
-      -- Make available house deliveries.
-      step'@Step{level = level'@Level{tiles = tiles'}, train = train'} <- case train of
-        Nothing -> pure step
-        Just c -> do
-          house <- neighborHouses c
-          pure
-            step
-              { level = level{tiles = insert house (House c True) tiles}
-              , train = Nothing
-              }
+      nextSteps :: [Step]
+      nextSteps = do
+        -- Take a step into the next position.
+        step@Step{level = level@Level{tiles}, train} <- debugLen "nextPositions" nextPositions
 
-      -- Make available critter pickups.
-      case train' of
-        Just _ -> pure step'
-        Nothing -> do
-          maybeCritter <- if null neighborCritters then [Nothing] else Just <$> neighborCritters
-          case maybeCritter of
-            Nothing -> pure step'
-            Just (p, c) ->
-              pure
-                step'
-                  { level = level'{tiles = insert p (Critter c True) tiles'}
-                  , train = Just c
-                  }
+        -- Make available house deliveries.
+        step'@Step{level = level'@Level{tiles = tiles'}, train = train'} <- case train of
+          Nothing -> pure step
+          Just c -> do
+            let houses = neighborHouses c
+            maybeHouse <- if null houses then [Nothing] else Just <$> houses
+            case maybeHouse of
+              Nothing -> pure step
+              Just house ->
+                pure
+                  step
+                    { level = level{tiles = insert house (House c True) tiles}
+                    , train = Nothing
+                    }
 
-  path = aStarAssoc next heuristic found initial
+        -- Make available critter pickups.
+        case train' of
+          Just _ -> pure step'
+          Nothing -> do
+            maybeCritter <- if null neighborCritters then [Nothing] else Just <$> neighborCritters
+            case maybeCritter of
+              Nothing -> pure step'
+              Just (p, c) ->
+                pure
+                  step'
+                    { level = level'{tiles = insert p (Critter c True) tiles'}
+                    , train = Just c
+                    }
+
+  path = bfs next found initial
 
   solution = do
-    (_, steps) <- path
+    steps <- path
     steps' <- nonEmpty steps
     pure $ (.level) $ last steps'
 
