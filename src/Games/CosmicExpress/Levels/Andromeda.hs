@@ -6,7 +6,7 @@ import Games.CosmicExpress.Levels (Color (..), Grid (..), Level (..), Tile (..))
 import Math.Geometry.Grid.Square (rectSquareGrid)
 
 levels :: IntMap Level
-levels = fromList $ zip [1 ..] [l1, l2, l3]
+levels = fromList $ zip [1 ..] [l1, l2, l3, l4, l5]
 
 l1 :: Level
 l1 =
@@ -50,5 +50,39 @@ l3 =
           ]
     , start = (0, 3)
     , finish = (8, 3)
+    , grid = Grid $ rectSquareGrid 7 9
+    }
+
+l4 :: Level
+l4 =
+  Level
+    { tiles =
+        fromList
+          [ ((3, 5), Critter Purple False)
+          , ((4, 5), Critter Purple False)
+          , ((3, 1), House Purple False)
+          , ((4, 1), House Purple False)
+          ]
+    , start = (0, 3)
+    , finish = (7, 3)
+    , grid = Grid $ rectSquareGrid 7 8
+    }
+
+l5 :: Level
+l5 =
+  Level
+    { tiles =
+        fromList
+          [ ((1, 5), Critter Purple False)
+          , ((2, 5), House Orange False)
+          , ((1, 1), Critter Orange False)
+          , ((2, 1), House Purple False)
+          , ((6, 5), House Purple False)
+          , ((7, 5), Critter Orange False)
+          , ((6, 1), House Orange False)
+          , ((7, 1), Critter Purple False)
+          ]
+    , start = (0, 3)
+    , finish = (4, 6)
     , grid = Grid $ rectSquareGrid 7 9
     }
