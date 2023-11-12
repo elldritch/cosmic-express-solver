@@ -3,6 +3,8 @@ module Main (main) where
 import Relude
 import Relude.Extra.Map (lookup)
 
+import Control.Exception (IOException, try)
+import Data.Aeson (decodeStrict, encode)
 import Options.Applicative (
   Parser,
   ParserInfo,
@@ -16,6 +18,8 @@ import Options.Applicative (
   strOption,
   value,
  )
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
 
 import Games.CosmicExpress.Levels (renderLevel)
 import Games.CosmicExpress.Levels.Andromeda qualified as Andromeda
@@ -47,8 +51,26 @@ main = do
       case level `lookup` Andromeda.levels of
         Nothing -> putStrLn "Invalid level number" >> exitFailure
         Just l -> do
+          -- Make sure directory to saved solution exists.
+          let
+            folderPath = dataDir </> "andromeda" </> show level
+            filePath = folderPath </> "answer.json"
+          createDirectoryIfMissing True folderPath
+          -- If the solution has already been saved, load solution from file.
+          result <- try $ readFileBS filePath
+          maybeContents <- case result of
+            Right bs -> pure $ Just bs
+            Left (_ :: IOException) -> pure Nothing
+          -- Otherwise, solve and save the solution.
+          solution <- case maybeContents >>= decodeStrict of
+            Just saved -> pure saved
+            Nothing -> do
+              let solution = solve l
+              writeFileLBS filePath $ encode solution
+              pure solution
+          -- Display the results.
           putStrLn "Puzzle:"
           putStrLn $ renderLevel l
           putStrLn "Solution:"
-          putStrLn $ renderLevel $ solve l
+          putStrLn $ renderLevel solution
     _ -> putStrLn "Invalid constellation name" >> exitFailure

@@ -11,13 +11,16 @@ module Games.CosmicExpress.Levels (
 import Relude
 import Relude.Extra.Map (lookup)
 
+import Data.Aeson (FromJSON (..), ToJSON (..), Value, object, withObject, (.:), (.=))
+import Data.Aeson.Types (Parser)
 import Data.ByteString qualified as BS
 import Math.Geometry.Grid (Index, size)
-import Math.Geometry.Grid.Square (RectSquareGrid)
+import Math.Geometry.Grid.Square (RectSquareGrid, rectSquareGrid)
+import Math.Geometry.Grid.SquareInternal (RectSquareGrid (..))
 import Rainbow (Chunk, bold, chunksToByteStrings, color256, fore, inverse, toByteStringsColors256)
 
 data Color = Purple | Orange
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
 data Orientation
   = NS
@@ -26,13 +29,13 @@ data Orientation
   | SE
   | NW
   | SW
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
 data Tile
   = Track Orientation
   | Critter {color :: Color, completed :: Bool}
   | House {color :: Color, completed :: Bool}
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
 -- Returns a string for the sake of colorizing ANSI codes. Make sure that this
 -- string is always one-width, otherwise the grid layout will break.
@@ -56,13 +59,25 @@ renderTile = \case
   renderChunk :: Chunk -> String
   renderChunk c = decodeUtf8 $ BS.concat $ chunksToByteStrings toByteStringsColors256 [c]
 
--- This is a newtype wrapper over RectSquareGrid so that we can define an Ord.
+-- This is a newtype wrapper over RectSquareGrid so that we can define extra
+-- instances.
 newtype Grid = Grid RectSquareGrid
   deriving (Eq, Show)
 
 instance Ord Grid where
   compare :: Grid -> Grid -> Ordering
   compare _ _ = EQ
+
+instance ToJSON Grid where
+  toJSON :: Grid -> Value
+  toJSON (Grid (RectSquareGrid (r, c) _)) = object ["rows" .= r, "columns" .= c]
+
+instance FromJSON Grid where
+  parseJSON :: Value -> Parser Grid
+  parseJSON = withObject "Grid" $ \o -> do
+    rows <- o .: "rows"
+    columns <- o .: "columns"
+    pure $ Grid $ rectSquareGrid rows columns
 
 type Position = Index RectSquareGrid
 
@@ -79,7 +94,7 @@ data Level = Level
     -- library work as expected.
     grid :: Grid
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
 {- FOURMOLU_DISABLE -}
 renderLevel :: Level -> String

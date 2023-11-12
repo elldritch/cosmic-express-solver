@@ -17,7 +17,13 @@ Results are saved and cached in `datadir`.
 datadir/
   andromeda/
     1/
-      puzzle.json
       answer.json
-      steps.json
 ```
+
+<!--
+
+TODO:
+
+- Save `proof.json` for each level, and have a mode that displays a simulation of the train as a verification of the puzzle solution.
+
+-->
