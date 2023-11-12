@@ -2,23 +2,21 @@ module Games.CosmicExpress.Levels (
   Tile (..),
   Color (..),
   Orientation (..),
-  grid,
-  rows,
-  columns,
   Position,
   Level (..),
+  Grid (..),
   renderLevel,
 ) where
 
 import Relude
 import Relude.Extra.Map (lookup)
 
-import Math.Geometry.Grid (Index)
-import Math.Geometry.Grid.Square (RectSquareGrid, rectSquareGrid)
+import Math.Geometry.Grid (Index, size)
+import Math.Geometry.Grid.Square (RectSquareGrid)
 import System.Console.Pretty (Style (..), color, style)
 import System.Console.Pretty qualified as Console (Color (..))
 
-data Color = Purple
+data Color = Purple | Orange
   deriving (Eq, Ord, Show)
 
 data Orientation
@@ -40,56 +38,63 @@ data Tile
 -- string is always one-width, otherwise the grid layout will break.
 renderTile :: Tile -> String
 renderTile = \case
-  (Track t) -> case t of
+  Track t -> case t of
     NS -> "║"
     EW -> "═"
     NE -> "╚"
     SE -> "╔"
     NW -> "╝"
     SW -> "╗"
-  (Critter c done) -> renderColored c $ if done then "c" else style Bold "C"
-  (House c done) -> renderColored c $ if done then "h" else style Bold "H"
+  Critter c done -> renderColored c $ if done then "c" else style Bold "C"
+  House c done -> renderColored c $ if done then "h" else style Bold "H"
  where
   renderColored :: Color -> String -> String
   renderColored Purple l = style Reverse $ color Console.Magenta l
+  renderColored Orange l = style Reverse $ color Console.Yellow l
 
-rows :: Int
-rows = 7
+-- This is a newtype wrapper over RectSquareGrid so that we can define an Ord.
+newtype Grid = Grid RectSquareGrid
+  deriving (Eq, Show)
 
-columns :: Int
-columns = 8
-
--- (0, 0) is the bottom left corner. Row number goes up as tile positions go
--- upwards. Column number goes up as tile positions go rightwards.
---
--- See visualization at https://github.com/mhwombat/grid/wiki/Square-tiles. We
--- need to match this visualization so that Directions from the grid library
--- work as expected.
-grid :: RectSquareGrid
-grid = rectSquareGrid rows columns
+instance Ord Grid where
+  compare :: Grid -> Grid -> Ordering
+  compare _ _ = EQ
 
 type Position = Index RectSquareGrid
 
 data Level = Level
   { -- Only non-empty tiles are stored in the map.
     tiles :: Map Position Tile
-  , start :: Int
-  , finish :: Int
+  , start :: Position
+  , finish :: Position
+  , -- (0, 0) is the bottom left corner. Row number goes up as tile positions go
+    -- upwards. Column number goes up as tile positions go rightwards.
+    --
+    -- See visualization at https://github.com/mhwombat/grid/wiki/Square-tiles.
+    -- We need to match this visualization so that Directions from the grid
+    -- library work as expected.
+    grid :: Grid
   }
   deriving (Eq, Ord, Show)
 
 {- FOURMOLU_DISABLE -}
 renderLevel :: Level -> String
-renderLevel Level{tiles, start, finish} =
+renderLevel Level{tiles, start, finish, grid = Grid grid} =
   ['┌'] ++ [ '─' | _ <- [0..columns-1] ] ++ ['┐'] ++ ['\n']
   ++ concat [
-    [if r == start then 'S' else '│']
+    ['│']
     ++
-    concat [ maybe " " renderTile (lookup (c, r) tiles) | c <- [0..columns-1] ]
+    concat [
+      if (c, r) == start then "S" else
+      if (c, r) == finish then "F" else
+      maybe " " renderTile (lookup (c, r) tiles)
+    | c <- [0..columns-1] ]
     ++
-    [if r == finish then 'F' else '│']
+    ['│']
     ++
     ['\n']
   | r <- reverse [0..rows-1] ]
   ++ ['└'] ++ [ '─' | _ <- [0..columns-1] ] ++ ['┘']
+ where
+  (rows, columns) = size grid
 {- FOURMOLU_ENABLE -}

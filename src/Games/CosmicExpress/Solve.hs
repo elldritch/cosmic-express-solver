@@ -1,13 +1,21 @@
 module Games.CosmicExpress.Solve (solve) where
 
 import Relude
+import Relude.Extra.Map (elems, insert, lookup, member)
 
-import Algorithm.Search (aStarAssoc, bfs)
-import Games.CosmicExpress.Levels (Color (..), Level (..), Orientation (..), Position, Tile (..), columns, grid, renderLevel)
-import Math.Geometry.Grid (distance, neighbour, neighbours)
+import Algorithm.Search (bfs)
+import Math.Geometry.Grid (neighbour, neighbours)
 import Math.Geometry.Grid.SquareInternal (SquareDirection (..))
-import Relude.Extra.Foldable1 (Foldable1 (minimum1))
-import Relude.Extra.Map (elems, insert, lookup, member, toPairs)
+
+import Games.CosmicExpress.Levels (
+  Color (..),
+  Grid (..),
+  Level (..),
+  Orientation (..),
+  Position,
+  Tile (..),
+  renderLevel,
+ )
 
 -- This is a newtype wrapper over SquareDirection so that we can define an Ord.
 newtype Direction = Direction SquareDirection
@@ -15,13 +23,7 @@ newtype Direction = Direction SquareDirection
 
 instance Ord Direction where
   compare :: Direction -> Direction -> Ordering
-  compare (Direction a) (Direction b) = compare (toInt a) (toInt b)
-   where
-    toInt :: SquareDirection -> Int
-    toInt North = 1
-    toInt East = 2
-    toInt South = 3
-    toInt West = 4
+  compare _ _ = EQ
 
 directions :: [SquareDirection]
 directions = [North, East, South, West]
@@ -32,8 +34,8 @@ data Step = Step
     -- This tile is currently empty in this step.
     tip :: Position
   , -- The direction we're facing after placing the previous track piece. If we
-    -- last placed an EW track piece moving rightwards, we came from the West and
-    -- would be "facing" East.
+    -- last placed an EW track piece moving rightwards, we came from the West
+    -- and would be "facing" East.
     facing :: Direction
   , -- The critter currently in the train.
     train :: Maybe Color
@@ -59,8 +61,7 @@ debugStepMsg prefix s@Step{level, tip, facing, train} =
   renderLevel level ++ "\n" ++
   "Train: " ++ show train ++ "\n" ++
   "Tip: " ++ show tip ++ "\n" ++
-  "Facing: " ++ show facing ++ "\n" ++
-  "Heuristic: " ++ show (heuristic s) ++ "\n"
+  "Facing: " ++ show facing ++ "\n"
 {- FOURMOLU_ENABLE -}
 
 solve :: Level -> Level
@@ -68,29 +69,30 @@ solve startLevel@Level{start, finish} = case solution of
   Nothing -> error "Impossible: no solution found"
   Just l -> l
  where
-  -- We begin facing east, with the tip in front of the start tile, with no
-  -- critter in the train.
+  -- We begin facing east, with the tip at the start tile, with no critter in
+  -- the train.
   initial :: Step
-  initial = debugStep "Start" $ Step{level = startLevel, tip = beginning, facing = Direction East, train = Nothing}
-
-  -- We begin in front of the start tile.
-  beginning :: Position
-  beginning = (0, start)
-
-  -- We end in front of the finish tile.
-  end :: Position
-  end = (columns - 1, finish)
+  initial =
+    -- debugStep
+    --   "Start"
+    Step
+      { level = startLevel
+      , tip = start
+      , facing = Direction East
+      , train = Nothing
+      }
 
   -- We have reached our destination if all of the following are true:
   --
-  -- 1. We have reached the end tile.
+  -- 1. We have reached the finish tile.
   -- 2. Every critter has been delivered to its house.
   --
-  -- We can now complete the track by connecting the end tile to the finish
-  -- tile.
+  -- We can now trivially complete the track by connecting the finish tile to
+  -- the East.
   found :: Step -> Bool
   found s@Step{level = Level{tiles}, tip} =
-    debugStep' "Testing" s $ tip == end && all delivered (elems tiles)
+    tip == finish && all delivered (elems tiles)
+  -- debugStep' "Testing" s $ tip == finish && all delivered (elems tiles)
 
   delivered :: Tile -> Bool
   delivered (Critter _ False) = False
@@ -120,49 +122,29 @@ solve startLevel@Level{start, finish} = case solution of
   next :: Step -> [Step]
   next
     currentStep@Step
-      { level = currentLevel@Level{tiles = currentTiles}
+      { level = currentLevel@Level{tiles = currentTiles, grid = Grid grid}
       , tip = currentTip
-      , facing = (Direction facing)
-      } = debugNexts nextSteps
+      , facing = Direction facing
+      } = nextSteps
      where
+      -- } = debugNexts nextSteps
+
       debugNexts :: [Step] -> [Step]
       debugNexts nexts = trace msg nexts
-        where
-          msg =
-            debugStepMsg "Current" currentStep ++ "\n"
-            ++ "Nexts: " ++ show (length nexts) ++ "\n"
-            ++ concat [ debugStepMsg ("Next " <> show i) n | (i, n) <- zip ([1..] :: [Int]) nexts]
-
-      trackPiece :: SquareDirection -> Orientation
-      trackPiece nextDirection = case facing of
-        North -> case nextDirection of
-          North -> NS
-          East -> SE
-          West -> SW
-          South -> doublesBack
-        East -> case nextDirection of
-          North -> NW
-          East -> EW
-          West -> doublesBack
-          South -> SW
-        South -> case nextDirection of
-          North -> doublesBack
-          East -> NE
-          West -> NW
-          South -> NS
-        West -> case nextDirection of
-          North -> NE
-          East -> doublesBack
-          West -> EW
-          South -> SE
        where
-        doublesBack = error "Impossible: track piece doubles back on itself"
+        msg =
+          debugStepMsg "Current" currentStep
+            ++ "\n"
+            ++ "Nexts: "
+            ++ show (length nexts)
+            ++ "\n"
+            ++ concat [debugStepMsg ("Next " <> show i) n | (i, n) <- zip ([1 ..] :: [Int]) nexts]
 
       nextPositions :: [Step]
       nextPositions = do
         -- Special case: if the current tip is the end tile, but objectives are
         -- still incomplete, then this track is obviously impossible.
-        guard $ not (currentTip == end && not (all delivered (elems currentTiles)))
+        guard $ not (currentTip == finish && not (all delivered (elems currentTiles)))
         -- Choose a direction to go in.
         direction <- directions
         -- Make sure the next position is still within the grid.
@@ -172,7 +154,7 @@ solve startLevel@Level{start, finish} = case solution of
 
         pure
           currentStep
-            { level = currentLevel{tiles = insert currentTip (Track $ trackPiece direction) currentTiles}
+            { level = currentLevel{tiles = insert currentTip (Track $ connect facing direction) currentTiles}
             , tip = position
             , facing = Direction direction
             }
@@ -193,10 +175,17 @@ solve startLevel@Level{start, finish} = case solution of
           Just (House h False) -> h == c
           _ -> False
 
+      -- TODO:
+      -- There are always exactly zero, one, or two critters to pick up
+      -- Can't be more than 2 because need entrance and exit rail tiles
+      -- 2 critters causes collision (no pickup)
+      -- 2 houses causes rightwards one to be chosen always? what about houses in a corner?
+
       nextSteps :: [Step]
       nextSteps = do
         -- Take a step into the next position.
-        step@Step{level = level@Level{tiles}, train} <- debugLen "nextPositions" nextPositions
+        step@Step{level = level@Level{tiles}, train} <- nextPositions
+        -- step@Step{level = level@Level{tiles}, train} <- debugLen "nextPositions" nextPositions
 
         -- Make available house deliveries.
         step'@Step{level = level'@Level{tiles = tiles'}, train = train'} <- case train of
@@ -232,53 +221,35 @@ solve startLevel@Level{start, finish} = case solution of
   solution = do
     steps <- path
     steps' <- nonEmpty steps
-    pure $ (.level) $ last steps'
+    let finalStep@Step{tip, facing = Direction facing, level = Level{tiles}} = last steps'
+    pure $ finalStep.level{tiles = insert tip (Track $ connect facing East) tiles}
 
--- A* uses the heuristic to preferentially try paths "best-first". To produce
--- an optimal solution, our heuristic must be admissible, which means it must
--- never overestimate the distance to the destination.
+-- @connect a b@ computes the track piece that connects an existing tile facing
+-- @a@ to a new tile in the direction of @b@.
 --
--- A naive heuristic is taking the distance to the end tile. This results in
--- A* trying really hard to reach the end tile without completing the pickups
--- and drop-offs it needs to do on the way.
---
--- We also cannot use the distance to the nearest "incomplete objective". This
--- heuristic is defined as:
---
--- 1. When the train is empty but there are remaining critters, the distance
---    to the nearest critter.
--- 2. When the train is loaded, the distance to nearest house that the loaded
---    critter can be dropped off at.
--- 3. When all objectives are fulfilled, the distance to the end tile.
---
--- This heuristic doesn't work either because it causes the heuristic to spike
--- after accomplishing certain objectives. For example, after reaching a
--- nearby critter, the heuristic spikes to the distance to the critter's
--- house. This encourages A* to find paths that go towards the critter but
--- never reach it, in order to keep the low heuristic value.
---
--- Instead, we sum all of these distances, because we need to avoid the
--- heuristic ever increasing upon completing an objective.
-heuristic :: Step -> Int
-heuristic Step{level = Level{tiles, finish}, tip} =
-  fromMaybe 0 nearestRemainingCritter
-    + fromMaybe 0 nearestRemainingHouse
-    + distance grid tip end
+-- This function is partial. Passing an invalid direction (i.e. one that implies
+-- a track piece that doubles back on itself) will result in an error.
+connect :: SquareDirection -> SquareDirection -> Orientation
+connect facing nextDirection = case facing of
+  North -> case nextDirection of
+    North -> NS
+    East -> SE
+    West -> SW
+    South -> doublesBack
+  East -> case nextDirection of
+    North -> NW
+    East -> EW
+    West -> doublesBack
+    South -> SW
+  South -> case nextDirection of
+    North -> doublesBack
+    East -> NE
+    West -> NW
+    South -> NS
+  West -> case nextDirection of
+    North -> NE
+    East -> doublesBack
+    West -> EW
+    South -> SE
  where
-  hasCritter :: Tile -> Bool
-  hasCritter (Critter _ False) = True
-  hasCritter _ = False
-
-  hasHouse :: Tile -> Bool
-  hasHouse (House _ False) = True
-  hasHouse _ = False
-
-  nearestRemaining :: (Tile -> Bool) -> Maybe Int
-  nearestRemaining f = fmap minimum1 $ nonEmpty $ fmap (distance grid tip . fst) $ filter (f . snd) $ toPairs tiles
-
-  nearestRemainingCritter = nearestRemaining hasCritter
-  nearestRemainingHouse = nearestRemaining hasHouse
-
-  -- We end in front of the finish tile.
-  end :: Position
-  end = (columns - 1, finish)
+  doublesBack = error "Impossible: track piece doubles back on itself"

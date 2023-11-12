@@ -13,3 +13,5 @@ main = do
   putStrLn $ renderLevel $ solve Andromeda.l1
   putStrLn $ renderLevel Andromeda.l2
   putStrLn $ renderLevel $ solve Andromeda.l2
+  putStrLn $ renderLevel Andromeda.l3
+  putStrLn $ renderLevel $ solve Andromeda.l3
