@@ -4,9 +4,7 @@ version:       0.1.0.0
 tested-with:   GHC ==9.4.7
 
 common options
-  build-depends:
-    , relude  ==1.2.1.0
-
+  build-depends:      relude ==1.2.1.0
   default-language:   GHC2021
   default-extensions:
     NoFieldSelectors
@@ -34,8 +32,7 @@ common options
   ghc-options:
     -Wall -Wincomplete-uni-patterns -Wcompat
     -Wincomplete-record-updates -Wmissing-home-modules
-    -Wmissing-export-lists -Wredundant-constraints
-    -Wunused-packages
+    -Wmissing-export-lists -Wredundant-constraints -Wunused-packages
 
 library
   import:          options
@@ -55,7 +52,10 @@ library
 executable cosmic-solver
   import:         options
   ghc-options:    -threaded
-  build-depends:  cosmic-express-solver
+  build-depends:
+    , cosmic-express-solver
+    , optparse-applicative   ==0.18.1.0
+
   hs-source-dirs: cmd/cosmic-solver
   main-is:        Main.hs
 

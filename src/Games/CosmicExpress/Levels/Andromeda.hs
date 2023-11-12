@@ -1,9 +1,12 @@
-module Games.CosmicExpress.Levels.Andromeda (l1, l2, l3) where
+module Games.CosmicExpress.Levels.Andromeda (levels) where
 
 import Relude
 
 import Games.CosmicExpress.Levels (Color (..), Grid (..), Level (..), Tile (..))
 import Math.Geometry.Grid.Square (rectSquareGrid)
+
+levels :: IntMap Level
+levels = fromList $ zip [1 ..] [l1, l2, l3]
 
 l1 :: Level
 l1 =
