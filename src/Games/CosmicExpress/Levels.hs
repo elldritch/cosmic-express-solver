@@ -11,10 +11,10 @@ module Games.CosmicExpress.Levels (
 import Relude
 import Relude.Extra.Map (lookup)
 
+import Data.ByteString qualified as BS
 import Math.Geometry.Grid (Index, size)
 import Math.Geometry.Grid.Square (RectSquareGrid)
-import System.Console.Pretty (Style (..), color, style)
-import System.Console.Pretty qualified as Console (Color (..))
+import Rainbow (Chunk, bold, chunksToByteStrings, color256, fore, inverse, toByteStringsColors256)
 
 data Color = Purple | Orange
   deriving (Eq, Ord, Show)
@@ -45,12 +45,16 @@ renderTile = \case
     SE -> "╔"
     NW -> "╝"
     SW -> "╗"
-  Critter c done -> renderColored c $ if done then "c" else style Bold "C"
-  House c done -> renderColored c $ if done then "h" else style Bold "H"
+  Critter c done -> renderChunk $ colorize c $ if done then "c" else bold "C"
+  House c done -> renderChunk $ colorize c $ if done then "h" else bold "H"
  where
-  renderColored :: Color -> String -> String
-  renderColored Purple l = style Reverse $ color Console.Magenta l
-  renderColored Orange l = style Reverse $ color Console.Yellow l
+  -- For a lookup table of colors, see https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit.
+  colorize :: Color -> Chunk -> Chunk
+  colorize Purple = inverse . fore (color256 91)
+  colorize Orange = inverse . fore (color256 208)
+
+  renderChunk :: Chunk -> String
+  renderChunk c = decodeUtf8 $ BS.concat $ chunksToByteStrings toByteStringsColors256 [c]
 
 -- This is a newtype wrapper over RectSquareGrid so that we can define an Ord.
 newtype Grid = Grid RectSquareGrid

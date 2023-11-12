@@ -5,11 +5,11 @@ tested-with:   GHC ==9.4.7
 
 common options
   build-depends:
-    , base    ==4.17.2.0
     , relude  ==1.2.1.0
 
   default-language:   GHC2021
   default-extensions:
+    NoFieldSelectors
     NoImplicitPrelude
     DataKinds
     DefaultSignatures
@@ -22,7 +22,6 @@ common options
     GeneralizedNewtypeDeriving
     LambdaCase
     MultiWayIf
-    NoFieldSelectors
     OverloadedLabels
     OverloadedRecordDot
     OverloadedStrings
@@ -36,12 +35,13 @@ common options
     -Wall -Wincomplete-uni-patterns -Wcompat
     -Wincomplete-record-updates -Wmissing-home-modules
     -Wmissing-export-lists -Wredundant-constraints
+    -Wunused-packages
 
 library
   import:          options
   build-depends:
     , grid               ==7.8.15
-    , pretty-terminal    ==0.1.0.0
+    , rainbow            ==0.34.2.2
     , search-algorithms  ==0.3.2
 
   hs-source-dirs:  src

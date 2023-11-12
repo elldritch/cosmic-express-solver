@@ -38,14 +38,14 @@ l3 =
   Level
     { tiles =
         fromList
-          [ ((2, 1), House Orange False)
-          , ((2, 5), Critter Orange False)
+          [ ((1, 1), House Orange False)
+          , ((1, 5), Critter Orange False)
           , ((4, 1), Critter Purple False)
           , ((4, 5), House Purple False)
-          , ((7, 2), House Orange False)
+          , ((7, 1), House Orange False)
           , ((7, 5), Critter Orange False)
           ]
     , start = (0, 3)
-    , finish = (7, 3)
+    , finish = (8, 3)
     , grid = Grid $ rectSquareGrid 7 9
     }
