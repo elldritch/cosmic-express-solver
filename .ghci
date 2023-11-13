@@ -1,0 +1,5 @@
+:module +*Games.CosmicExpress.Level
+:module +*Games.CosmicExpress.Level.Board
+:module +*Games.CosmicExpress.Levels.Andromeda
+:module +*Games.CosmicExpress.Solve
+import Relude

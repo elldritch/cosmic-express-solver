@@ -38,7 +38,6 @@ library
   import:          options
   build-depends:
     , aeson              ==2.2.1.0
-    , grid               ==7.8.15
     , rainbow            ==0.34.2.2
     , search-algorithms  ==0.3.2
 

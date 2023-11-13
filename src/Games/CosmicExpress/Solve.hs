@@ -16,6 +16,10 @@ import Games.CosmicExpress.Level (
  )
 import Games.CosmicExpress.Level.Board (Bearing (..), Cardinal (..), cardinals, neighbor, neighbors, turn)
 
+-- Enable debug tracing.
+debug :: Bool
+debug = False
+
 -- A Step represents a snapshot of game with a partial solution. It captures a
 -- set of tracks laid down and tracks the state of the train as it follows those
 -- tracks.
@@ -108,28 +112,25 @@ initial level =
 -- We can now trivially complete the track by connecting the finish tile.
 found :: Step -> Bool
 found s@Step{level = Level{tiles, finish}, tip} =
-  trace (_renderStep "Found" s ++ "\n") $ tip == finish && not (any incomplete (elems tiles))
+  debugFound $ tip == finish && not (any incomplete (elems tiles))
+ where
+  debugFound = if debug then trace (_renderStep "Testing" s ++ "\n") else id
 
 -- To calculate the next steps, we need to do three things:
 --
--- 1. Simulate the effects of the train engine reaching the tip tile. This
---    means simulating the arrival of the train car to the previous tile.
--- 2. Determine whether the current track is still solvable. There are several
---    heuristics we can use to abort early if we've reached a state where we
---    obviously can no longer complete the level. This determination must
---    occur _after_ simulating the current arrival, since the arrival of the
---    train car (and therefore delivery/pickup of some critters) may change
---    the solvability of a particular track position.
--- 3. Select a next tile to try, and place a track piece to that new tip.
+-- 1. Select a next tile to try, and place a track piece to that new tip.
+-- 2. Simulate the effects of the train engine reaching that new tip tile. This
+--    means simulating the arrival of the train car to the previous tile (i.e.
+--    the current tip).
+-- 3. Determine whether the proposed track in the next step is still solvable.
+--    There are several heuristics we can use to abort early if we've reached a
+--    state where we obviously can no longer complete the level. This
+--    determination must occur _after_ simulating the current arrival, since the
+--    arrival of the train car (and therefore delivery/pickup of some critters)
+--    may change the solvability of a particular track position.
 --
 next :: Step -> [Step]
-next step = debugNext $ do
-  -- Simulate the arrival of the train car to the previous tile.
-  let step'@Step{level = level'@Level{tiles}, tip, previousExitBearing} = simulateTrain step
-
-  -- Determine whether the current track is still solvable.
-  guard $ solvable step'
-
+next step@Step{level = level@Level{tiles}, tip, previousExitBearing} = debugNext $ do
   -- Select a next tile to try.
   direction <- cardinals
   (position, tile) <- maybeToList $ neighbor tiles tip direction
@@ -137,17 +138,24 @@ next step = debugNext $ do
   guard $ tile == Empty
   -- Place a track piece to the new selected tip, and update the tip and
   -- previous positions.
-  pure
-    step'
-      { level = level'{tiles = insert tip (Track $ connect previousExitBearing direction) tiles}
-      , tip = position
-      , previousPosition = tip
-      , previousExitBearing = direction
-      }
+  let step' =
+        step
+          { level = level{tiles = insert tip (Track $ connect previousExitBearing direction) tiles}
+          , tip = position
+          , previousPosition = tip
+          , previousExitBearing = direction
+          }
+
+  -- Simulate the arrival of the train car to the new tip.
+  let step'' = simulateTrain step'
+
+  -- Determine whether the proposed track is still solvable.
+  guard $ solvable step''
+
+  pure step''
  where
   debugNext :: [Step] -> [Step]
-  -- debugNext nexts = nexts
-  debugNext nexts = trace message nexts
+  debugNext nexts = if debug then trace message nexts else nexts
    where
 {- FOURMOLU_DISABLE -}
     message =
@@ -193,7 +201,7 @@ connect start end = case start of
 incomplete :: Tile -> Bool
 incomplete (Critter _ False) = True
 incomplete (House _ False) = True
-incomplete _ = True
+incomplete _ = False
 
 -- Simulate the arrival of the train engine to the tip tile (and therefore the
 -- train car to the previous tile).
