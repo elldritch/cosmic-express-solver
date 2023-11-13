@@ -7,6 +7,7 @@ module Games.CosmicExpress.Level.Board (
   Bearing (..),
   turn,
   neighbors,
+  distance,
 ) where
 
 import Relude
@@ -69,3 +70,7 @@ neighbor board (x, y) cardinal = (position',) <$> position' `lookup` board
 -- All neighbors of a position.
 neighbors :: Board t -> Position -> [(Position, t)]
 neighbors board position = mapMaybe (neighbor board position) cardinals
+
+-- Calculate simple Manhattan distance.
+distance :: Position -> Position -> Int
+distance (x1, y1) (x2, y2) = abs (x1 - x2) + abs (y1 - y2)

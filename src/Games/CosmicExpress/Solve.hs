@@ -1,9 +1,10 @@
 module Games.CosmicExpress.Solve (solve) where
 
 import Relude
-import Relude.Extra.Map (elems, insert)
+import Relude.Extra.Foldable1 (maximum1)
+import Relude.Extra.Map (elems, insert, toPairs)
 
-import Algorithm.Search (bfs)
+import Algorithm.Search (aStarAssoc)
 import Data.Aeson (ToJSON (..), encode)
 
 import Games.CosmicExpress.Level (
@@ -14,7 +15,7 @@ import Games.CosmicExpress.Level (
   Tile (..),
   renderLevel',
  )
-import Games.CosmicExpress.Level.Board (Bearing (..), Cardinal (..), cardinals, neighbor, neighbors, turn)
+import Games.CosmicExpress.Level.Board (Bearing (..), Cardinal (..), cardinals, distance, neighbor, neighbors, turn)
 
 -- Enable debug tracing.
 debug :: Bool
@@ -81,7 +82,7 @@ solve level = case solution of
   solution = do
     -- Calculate the path of game states from the initial game state to a
     -- completed game state.
-    steps <- bfs next found $ initial level
+    (_, steps) <- aStarAssoc (fmap (,1) . next) heuristic found $ initial level
     Step{tip, level = l@Level{tiles}, previousExitBearing} <- last <$> nonEmpty steps
     -- Add the final track piece, which connects the final tip tile to the exit
     -- tunnel in the East.
@@ -116,6 +117,17 @@ found s@Step{level = Level{tiles, finish}, tip} =
   debugFound $ tip == finish && not (any incomplete (elems tiles))
  where
   debugFound = if debug then trace (_renderStep "Testing" s ++ "\n") else id
+
+-- For A* search, we need a heuristic function that never overestimates the
+-- distance to the goal. We use the maximum Manhattan distance from the tip to
+-- any unfinished objective, or to the finish tile.
+heuristic :: Step -> Int
+heuristic Step{level = Level{tiles, finish}, tip} =
+  maximum1 $ distance tip <$> finish :| fmap fst (filter (isUnfinishedObjective . snd) $ toPairs tiles)
+ where
+  isUnfinishedObjective (House _ False) = True
+  isUnfinishedObjective (Critter _ False) = True
+  isUnfinishedObjective _ = False
 
 -- To calculate the next steps, we need to do three things:
 --
