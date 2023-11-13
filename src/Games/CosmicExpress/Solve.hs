@@ -1,12 +1,10 @@
 module Games.CosmicExpress.Solve (solve) where
 
 import Relude
-import Relude.Extra.Map (elems, insert, lookup, member)
+import Relude.Extra.Map (elems, insert)
 
 import Algorithm.Search (bfs)
-import Data.Aeson (ToJSON (..), Value, encode)
-import Math.Geometry.Grid (neighbour, neighbours)
-import Math.Geometry.Grid.SquareInternal (SquareDirection (..), rectSquareGrid)
+import Data.Aeson (ToJSON (..), encode)
 
 import Games.CosmicExpress.Level (
   Color (..),
@@ -14,328 +12,174 @@ import Games.CosmicExpress.Level (
   Piece (..),
   Position,
   Tile (..),
-  renderLevel,
+  renderLevel',
  )
+import Games.CosmicExpress.Level.Board (Bearing (..), Cardinal (..), cardinals, neighbor, neighbors, turn)
 
--- This is a newtype wrapper over SquareDirection so that we can define extra
--- instances.
-newtype Cardinal = Direction SquareDirection
-  deriving (Eq, Show)
-
-instance Ord Cardinal where
-  compare :: Cardinal -> Cardinal -> Ordering
-  compare _ _ = EQ
-
-instance ToJSON Cardinal where
-  toJSON :: Cardinal -> Value
-  toJSON (Direction d) = case d of
-    North -> "north"
-    East -> "east"
-    South -> "south"
-    West -> "west"
-
-directions :: [SquareDirection]
-directions = [North, East, South, West]
-
--- TODO: Add relative Direction (L, F, R) too, for House resolution?
-
--- A Step represents a snapshot of game with a set of tracks laid.
+-- A Step represents a snapshot of game with a partial solution. It captures a
+-- set of tracks laid down and tracks the state of the train as it follows those
+-- tracks.
 data Step = Step
   { -- The level we're currently solving.
     level :: Level
   , -- The "tip" is the next tile that needs to have a track piece placed in it.
     -- This tile is currently empty in this step.
+    --
+    -- When simulating the train, we model this as the position that the train
+    -- engine is currently in. This lines up well with our end condition of the
+    -- tip ending in the finish tile, which is where the train engine would be.
     tip :: Position
-  , -- The direction we're facing after placing the previous track piece. This
-    -- is the direction that the train is facing as it arrives into the tip
-    -- tile. For example, if we last placed an EW track piece moving rightwards,
-    -- we came from the West and would be "facing" East.
-    facing :: Cardinal
+  , -- The previous tile that was placed. This tile has a track piece in it.
+    --
+    -- When simulating the train, we model this as the position that the train
+    -- car is currently in.
+    previousPosition :: Position
+  , -- The bearing of the train car as it exits the previous tile that was
+    -- placed.
+    previousExitBearing :: Cardinal
   , -- The critter currently in the train.
     train :: Maybe Color
   }
   deriving (Eq, Ord, Show, Generic, ToJSON)
 
+-- Render the step. Mostly useful for debugging.
+--
+-- TODO: Mark the train positions.
+_renderStep :: String -> Step -> String
+_renderStep prefix s@Step{level, tip, train, previousPosition} = rendered
+ where
+  renderer position
+    | position == tip = Just "T"
+    | position == previousPosition = Just "X"
+    | otherwise = Nothing
+
 {- FOURMOLU_DISABLE -}
-debugStepMsg :: String -> Step -> String
-debugStepMsg prefix s@Step{level, tip, facing, train} =
-  prefix ++ ": " ++ "\n" ++
-  renderLevel level ++ "\n" ++
-  "Train: " ++ show train ++ "\n" ++
-  "Tip: " ++ show tip ++ "\n" ++
-  "Facing: " ++ show facing ++ "\n" ++
-  "Show:" ++ show s ++ "\n" ++
-  "JSON:" ++ decodeUtf8 (encode s)
+  rendered =
+    prefix ++ ": " ++ "\n" ++
+    renderLevel' level renderer ++ "\n" ++
+    "Train: " ++ show train ++ "\n" ++
+    "Tip: " ++ show tip ++ "\n" ++
+    "Solvable: " ++ show (solvable s) ++ "\n" ++
+    "Show: " ++ show s ++ "\n" ++
+    "JSON: " ++ decodeUtf8 (encode s)
 {- FOURMOLU_ENABLE -}
 
+-- Solve a level.
+--
+-- We solve levels using a graph search through possible game states.
 solve :: Level -> Level
-solve startLevel@Level{start, finish} = case solution of
+solve level = case solution of
   Nothing -> error "Impossible: no solution found"
-  Just l -> l
+  Just s -> s
  where
-  -- We begin facing east, with the tip at the start tile, with no critter in
-  -- the train.
-  initial :: Step
-  initial = Step{level = startLevel, tip = start, facing = Direction East, train = Nothing}
-
-  -- We have reached our destination if all of the following are true:
-  --
-  -- 1. We have reached the finish tile.
-  -- 2. Every critter has been delivered to its house.
-  --
-  -- We can now trivially complete the track by connecting the finish tile.
-  found :: Step -> Bool
-  found Step{level = Level{tiles}, tip} = tip == finish && all delivered (elems tiles)
-
-  -- Meant to be used as @all delivered@. Any Critter that has not been picked
-  -- up or House that has not been filled is not delivered.
-  delivered :: Tile -> Bool
-  delivered (Critter _ False) = False
-  delivered (House _ False) = False
-  delivered _ = True
-
-  -- To find the next Step states, we need to do two things:
-  --
-  -- 1. Fill the current (empty) tip tile, which leads us to our next tip tile.
-  -- 2. Calculate any adjacency effects from critters, houses, etc.
-  --
-  -- To fill the current tip tile, we need to choose a target next tip tile, and
-  -- then fill the current tile with the appropriately oriented track piece. To
-  -- do this, we find all neighbors and then filter out neighboring tiles that
-  -- are occupied.
-  --
-  -- To calculate adjacency effects, we look at the current tip tile's
-  -- neighbors:
-  --
-  -- 1. If any neighbor is a house and the train contains a critter of the
-  --    correct color, unload the critter from the train and mark the house as
-  --    completed.
-  -- 2. If any neighbor is a critter and the train is empty, load the critter
-  --    into the train and mark the critter as completed.
-  --
-  -- Note that A* also requires a cost for every step. The cost is always 1.
-  next :: Step -> [Step]
-  next
-    currentStep@Step
-      { level = currentLevel@Level{tiles = currentTiles}
-      , tip = currentTip
-      , facing = Direction facing
-      } = nextSteps
-     where
-      grid = rectSquareGrid undefined undefined
-      -- } = debugNexts nextSteps
-
-      debugNexts :: [Step] -> [Step]
-      debugNexts nexts = trace msg nexts
-       where
-        msg =
-          debugStepMsg "Current" currentStep
-            ++ "\n"
-            ++ "Nexts: "
-            ++ show (length nexts)
-            ++ "\n"
-            ++ concat [debugStepMsg ("Next " <> show i) n | (i, n) <- zip ([1 ..] :: [Int]) nexts]
-
-      nextPositions :: [Step]
-      nextPositions = do
-        -- Special case: if the current tip is the end tile, but objectives are
-        -- still incomplete, then this track is obviously impossible.
-        guard $ not (currentTip == finish && not (all delivered (elems currentTiles)))
-        -- Choose a direction to go in.
-        direction <- directions
-        -- Make sure the next position is still within the grid.
-        position <- maybeToList $ neighbour grid currentTip direction
-        -- Make sure the next position is unoccupied.
-        guard $ not $ member position currentTiles
-
-        pure
-          currentStep
-            { level = currentLevel{tiles = insert currentTip (Track $ connect facing direction) currentTiles}
-            , tip = position
-            , facing = Direction direction
-            }
-
-      neighborCritters :: [(Position, Color)]
-      neighborCritters = mapMaybe critterLookup (neighbours grid currentTip)
-       where
-        critterLookup :: Position -> Maybe (Position, Color)
-        critterLookup p = case lookup p currentTiles of
-          Just (Critter c False) -> Just (p, c)
-          _ -> Nothing
-
-      neighborHouses :: Color -> [Position]
-      neighborHouses c = filter hasHouse (neighbours grid currentTip)
-       where
-        hasHouse :: Position -> Bool
-        hasHouse p = case lookup p currentTiles of
-          Just (House h False) -> h == c
-          _ -> False
-
-      -- TODO:
-      -- There are always exactly zero, one, or two critters to pick up
-      -- Can't be more than 2 because need entrance and exit rail tiles
-      -- 2 critters causes collision (no pickup)
-      -- 2 houses causes rightwards one to be chosen always? what about houses in a corner?
-
-      nextSteps :: [Step]
-      nextSteps = do
-        -- Take a step into the next position.
-        step@Step{level = level@Level{tiles}, train} <- nextPositions
-        -- step@Step{level = level@Level{tiles}, train} <- debugLen "nextPositions" nextPositions
-
-        -- Make available house deliveries.
-        step'@Step{level = level'@Level{tiles = tiles'}, train = train'} <- case train of
-          Nothing -> pure step
-          Just c -> do
-            let houses = neighborHouses c
-            maybeHouse <- if null houses then [Nothing] else Just <$> houses
-            case maybeHouse of
-              Nothing -> pure step
-              Just house ->
-                pure
-                  step
-                    { level = level{tiles = insert house (House c True) tiles}
-                    , train = Nothing
-                    }
-
-        -- Make available critter pickups.
-        case train' of
-          Just _ -> pure step'
-          Nothing -> do
-            maybeCritter <- if null neighborCritters then [Nothing] else Just <$> neighborCritters
-            case maybeCritter of
-              Nothing -> pure step'
-              Just (p, c) ->
-                pure
-                  step'
-                    { level = level'{tiles = insert p (Critter c True) tiles'}
-                    , train = Just c
-                    }
-
-  -- To find the next Step states, we need to do two things:
-  --
-  -- 1. Calculate all interactions that run after the train car reaches the
-  --    current tip tile.
-  -- 2. Pick a next tip tile. This will determine what track piece will be used
-  --    to fill the current (empty) tip tile, and will generate the set of
-  --    successor states.
-  --
-  -- To fill the current tip tile, we need to choose a target next tip tile, and
-  -- then fill the current tile with the appropriately oriented track piece. To
-  -- do this, we find all neighbors and then filter out neighboring tiles that
-  -- are occupied.
-  --
-  -- To calculate adjacency effects, we look at the current tip tile's
-  -- neighbors:
-  --
-  -- 1. If any neighbor is a house and the train contains a critter of the
-  --    correct color, unload the critter from the train and mark the house as
-  --    completed.
-  -- 2. If any neighbor is a critter and the train is empty, load the critter
-  --    into the train and mark the critter as completed.
-  --
-  -- Note that A* also requires a cost for every step. The cost is always 1.
-  next' :: Step -> [Step]
-  next'
-    currentStep@Step
-      { level = currentLevel@Level{tiles = currentTiles}
-      , tip = currentTip
-      , facing = Direction facing
-      } = nextSteps
-     where
-      grid = rectSquareGrid undefined undefined
-
-      neighborCritters :: [(Position, Color)]
-      neighborCritters = mapMaybe critterLookup (neighbours grid currentTip)
-       where
-        critterLookup :: Position -> Maybe (Position, Color)
-        critterLookup p = case lookup p currentTiles of
-          Just (Critter c False) -> Just (p, c)
-          _ -> Nothing
-
-      neighborHouses :: Color -> [Position]
-      neighborHouses c = filter hasHouse (neighbours grid currentTip)
-       where
-        hasHouse :: Position -> Bool
-        hasHouse p = case lookup p currentTiles of
-          Just (House h False) -> h == c
-          _ -> False
-
-      -- TODO:
-      -- There are always exactly zero, one, or two critters to pick up
-      -- Can't be more than 2 because need entrance and exit rail tiles
-      -- 2 critters causes collision (no pickup)
-      -- 2 houses causes rightwards one to be chosen always? what about houses in a corner?
-
-      nextSteps :: [Step]
-      nextSteps = do
-        -- Calculate interactions at current tip.
-        -- Deliver to houses.
-
-        -- Take a step into the next position.
-        step@Step{level = level@Level{tiles}, train} <- nextPositions undefined
-        -- step@Step{level = level@Level{tiles}, train} <- debugLen "nextPositions" nextPositions
-
-        -- Make available house deliveries.
-        step'@Step{level = level'@Level{tiles = tiles'}, train = train'} <- case train of
-          Nothing -> pure step
-          Just c -> do
-            let houses = neighborHouses c
-            maybeHouse <- if null houses then [Nothing] else Just <$> houses
-            case maybeHouse of
-              Nothing -> pure step
-              Just house ->
-                pure
-                  step
-                    { level = level{tiles = insert house (House c True) tiles}
-                    , train = Nothing
-                    }
-
-        -- Make available critter pickups.
-        case train' of
-          Just _ -> pure step'
-          Nothing -> do
-            maybeCritter <- if null neighborCritters then [Nothing] else Just <$> neighborCritters
-            case maybeCritter of
-              Nothing -> pure step'
-              Just (p, c) ->
-                pure
-                  step'
-                    { level = level'{tiles = insert p (Critter c True) tiles'}
-                    , train = Just c
-                    }
-
-  path = bfs next found initial
-
+  solution :: Maybe Level
   solution = do
-    steps <- path
-    steps' <- nonEmpty steps
-    let finalStep@Step{tip, facing = Direction facing, level = Level{tiles}} = last steps'
-    pure $ finalStep.level{tiles = insert tip (Track $ connect facing East) tiles}
+    -- Calculate the path of game states from the initial game state to a
+    -- completed game state.
+    steps <- bfs next found $ initial level
+    Step{tip, level = l@Level{tiles}, previousExitBearing} <- last <$> nonEmpty steps
+    -- Add the final track piece, which connects the final tip tile to the exit
+    -- tunnel in the East.
+    pure l{tiles = insert tip (Track $ connect previousExitBearing East) tiles}
+
+-- We begin facing east, with the tip at the start tile, with no critter in
+-- the train.
+initial :: Level -> Step
+initial level =
+  Step
+    { level = level
+    , tip = start
+    , previousPosition
+    , previousExitBearing = East
+    , train = Nothing
+    }
+ where
+  Level{start} = level
+  -- The previous position (where the train car starts) is always one tile
+  -- to the West of the start tile, since the start tunnel always faces
+  -- East.
+  previousPosition = let (x, y) = start in (x - 1, y)
+
+-- We have reached our destination if all of the following are true:
+--
+-- 1. We have reached the finish tile.
+-- 2. Every critter has been delivered to its house.
+--
+-- We can now trivially complete the track by connecting the finish tile.
+found :: Step -> Bool
+found s@Step{level = Level{tiles, finish}, tip} =
+  trace (_renderStep "Found" s ++ "\n") $ tip == finish && not (any incomplete (elems tiles))
+
+-- To calculate the next steps, we need to do three things:
+--
+-- 1. Simulate the effects of the train engine reaching the tip tile. This
+--    means simulating the arrival of the train car to the previous tile.
+-- 2. Determine whether the current track is still solvable. There are several
+--    heuristics we can use to abort early if we've reached a state where we
+--    obviously can no longer complete the level. This determination must
+--    occur _after_ simulating the current arrival, since the arrival of the
+--    train car (and therefore delivery/pickup of some critters) may change
+--    the solvability of a particular track position.
+-- 3. Select a next tile to try, and place a track piece to that new tip.
+--
+next :: Step -> [Step]
+next step = debugNext $ do
+  -- Simulate the arrival of the train car to the previous tile.
+  let step'@Step{level = level'@Level{tiles}, tip, previousExitBearing} = simulateTrain step
+
+  -- Determine whether the current track is still solvable.
+  guard $ solvable step'
+
+  -- Select a next tile to try.
+  direction <- cardinals
+  (position, tile) <- maybeToList $ neighbor tiles tip direction
+  -- Make sure the selected tile is empty.
+  guard $ tile == Empty
+  -- Place a track piece to the new selected tip, and update the tip and
+  -- previous positions.
+  pure
+    step'
+      { level = level'{tiles = insert tip (Track $ connect previousExitBearing direction) tiles}
+      , tip = position
+      , previousPosition = tip
+      , previousExitBearing = direction
+      }
+ where
+  debugNext :: [Step] -> [Step]
+  -- debugNext nexts = nexts
+  debugNext nexts = trace message nexts
+   where
+{- FOURMOLU_DISABLE -}
+    message =
+      _renderStep "Current" step
+        ++ "\n"
+        ++ "Nexts: " ++ show (length nexts) ++ "\n"
+        ++ concat [_renderStep ("Next " ++ show i) n ++ "\n" | (i, n) <- zip ([1 ..] :: [Int]) nexts]
+{- FOURMOLU_ENABLE -}
 
 -- @connect a b@ computes the track piece that connects an existing tile facing
 -- @a@ to a new tile in the direction of @b@.
 --
 -- This function is partial. Passing an invalid direction (i.e. one that implies
 -- a track piece that doubles back on itself) will result in an error.
-connect :: SquareDirection -> SquareDirection -> Piece
-connect facing nextDirection = case facing of
-  North -> case nextDirection of
+connect :: Cardinal -> Cardinal -> Piece
+connect start end = case start of
+  North -> case end of
     North -> NS
     East -> SE
     West -> SW
     South -> doublesBack
-  East -> case nextDirection of
+  East -> case end of
     North -> NW
     East -> EW
     West -> doublesBack
     South -> SW
-  South -> case nextDirection of
+  South -> case end of
     North -> doublesBack
     East -> NE
     West -> NW
     South -> NS
-  West -> case nextDirection of
+  West -> case end of
     North -> NE
     East -> doublesBack
     West -> EW
@@ -343,60 +187,101 @@ connect facing nextDirection = case facing of
  where
   doublesBack = error "Impossible: track piece doubles back on itself"
 
--- Meant to be used as @all delivered@. Any Critter that has not been picked
--- up or House that has not been filled is not delivered.
-delivered :: Tile -> Bool
-delivered (Critter _ False) = False
-delivered (House _ False) = False
-delivered _ = True
-
--- Calculate the next reachable positions from this Step.
-nextPositions :: Step -> [Step]
-nextPositions s@Step{level = l@Level{finish, tiles}, tip, facing = Direction facing} = do
-  let grid = rectSquareGrid undefined undefined
-  -- Special case, exit early: if the current tip is the end tile, but
-  -- objectives are still incomplete, then this track is obviously
-  -- impossible.
-  guard $ not (tip == finish && not (all delivered (elems tiles)))
-
-  -- Choose a direction to go in.
-  direction <- directions
-  -- Make sure the next position is still within the grid.
-  position <- maybeToList $ neighbour grid tip direction
-  -- Make sure the next position is unoccupied.
-  guard $ not $ member position tiles
-
-  pure
-    s
-      { level = l{tiles = insert tip (Track $ connect facing direction) tiles}
-      , tip = position
-      , facing = Direction direction
-      }
-
--- Calculate interactions at the current tip tile.
+-- Determine whether a tile contains an incomplete objective.
 --
--- 1. Deliver critters to houses.
--- 2. Pick up adjacent critters.
---
-interact :: Step -> Step
-interact s@Step{level = Level{tiles}, tip, train} = undefined
+-- Useful as @any incomplete@.
+incomplete :: Tile -> Bool
+incomplete (Critter _ False) = True
+incomplete (House _ False) = True
+incomplete _ = True
+
+-- Simulate the arrival of the train engine to the tip tile (and therefore the
+-- train car to the previous tile).
+simulateTrain :: Step -> Step
+simulateTrain step = step''
  where
-  -- If the train has a critter and adjacent houses, deliver the critter.
-  --
-  -- If there is an available house, the critter is always delivered to a single
-  -- specific house. WLOG, say the train arrives at this tile facing North. Then the possible
-  --
-  -- There are four possible house configurations relative to the train. WLOG,
-  -- assume the train is facing North. In that case, the possible configurations
-  -- of houses are:
-  --
-  -- 1. North
-  -- 2. East
-  -- 3. West
-  -- 4. East + West
-  delivered =
-    case train of
-      Just c -> undefined
-      Nothing -> tiles
+  -- First, we deliver any critters currently on the train if possible.
+  step' = deliverCritters step
+  -- Second, we pick up any critters adjacent to the train if possible.
+  step'' = pickupCritters step'
 
--- If the train is empty and there is an adjacent critter, pick up the critter.
+-- Deliver a critter on the train car. The train car is located on the
+-- previously placed tile.
+deliverCritters :: Step -> Step
+deliverCritters step@Step{level = level@Level{tiles}, train, previousPosition, previousExitBearing} =
+  fromMaybe step $ do
+    -- If the train has no critter, exit.
+    critterColor <- train
+    -- If the train has a critter, look for a house to deliver it to.
+    --
+    -- The house must match the color of the critter. If there are two such
+    -- houses, we pick houses in priority order of their relative bearing:
+    --
+    -- 1. Forward
+    -- 2. Rightwards
+    -- 3. Leftwards
+    -- 4. Backwards
+    --
+    -- Note that there cannot be more than two adjacent houses, since two of the
+    -- train car's tile's edges are adjacent to tracks.
+    --
+    -- If there is no matching house, exit.
+    (position, _) <- firstMatchingHouse critterColor
+    pure
+      step
+        { level = level{tiles = insert position (House critterColor True) tiles}
+        , train = Nothing
+        }
+ where
+  neighborsInPriorityOrder :: [(Position, Tile)]
+  neighborsInPriorityOrder =
+    mapMaybe
+      (neighbor tiles previousPosition . turn previousExitBearing)
+      [Forward, Rightward, Leftward, Backward]
+
+  firstMatchingHouse :: Color -> Maybe (Position, Tile)
+  firstMatchingHouse c =
+    find
+      ( \(_, tile) -> case tile of
+          House h False -> c == h
+          _ -> False
+      )
+      neighborsInPriorityOrder
+
+-- Pick up a critter adjacent to the train car.
+pickupCritters :: Step -> Step
+pickupCritters step@Step{level = level@Level{tiles}, train, previousPosition} = case train of
+  -- If the train is already full, exit.
+  Just _ -> step
+  Nothing -> fromMaybe step $ do
+    -- Otherwise, grab any single adjacent critter.
+    --
+    -- If there are two adjacent critters, they will bounce off of each other,
+    -- so grab neither.
+    --
+    -- Note that there cannot be more than two adjacent critters, since two of the
+    -- train car's tile's edges are adjacent to tracks.
+    --
+    -- If there are no adjacent critters, exit.
+    ns <- nonEmpty $ filter (isCritter . snd) $ neighbors tiles previousPosition
+    case ns of
+      (p, Critter c False) :| [] ->
+        pure
+          step
+            { train = Just c
+            , level = level{tiles = insert p (Critter c True) tiles}
+            }
+      _ -> mzero
+   where
+    isCritter (Critter _ False) = True
+    isCritter _ = False
+
+-- Return False if the current track is obviously unsolvable.
+solvable :: Step -> Bool
+solvable Step{level = Level{finish, tiles}, tip} =
+  -- If we're at the finish tile and there are incomplete objectives, then the
+  -- current track is obviously unsolvable, since we cannot possibly double back
+  -- to reach objectives after already arriving at the finish tile.
+  --
+  -- TODO: Add more heuristics here.
+  (tip /= finish) || not (any incomplete (elems tiles))

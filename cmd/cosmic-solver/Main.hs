@@ -43,14 +43,6 @@ argparser = info (optionsP <**> helper) mempty
 
 main :: IO ()
 main = do
-  let l n = fromMaybe undefined $ n `lookup` Andromeda.levels
-  putStrLn $ renderLevel $ l 1
-  putStrLn $ renderLevel $ l 2
-  putStrLn $ renderLevel $ l 3
-  putStrLn $ renderLevel $ l 4
-  putStrLn $ renderLevel $ l 5
-  _ <- exitSuccess
-
   hSetBuffering stdout NoBuffering
   Options{dataDir, constellation, level} <- execParser argparser
 

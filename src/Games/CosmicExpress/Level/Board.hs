@@ -6,6 +6,7 @@ module Games.CosmicExpress.Level.Board (
   cardinals,
   Bearing (..),
   turn,
+  neighbors,
 ) where
 
 import Relude
@@ -64,3 +65,7 @@ neighbor board (x, y) cardinal = (position',) <$> position' `lookup` board
     West -> (-1, 0)
 
   position' = (x + dx, y + dy)
+
+-- All neighbors of a position.
+neighbors :: Board t -> Position -> [(Position, t)]
+neighbors board position = mapMaybe (neighbor board position) cardinals

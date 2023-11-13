@@ -5,6 +5,7 @@ module Games.CosmicExpress.Level (
   Position,
   Level (..),
   renderLevel,
+  renderLevel',
 ) where
 
 import Relude
@@ -79,7 +80,13 @@ data Level = Level
 
 -- Render a Level in a human-friendly format.
 renderLevel :: Level -> String
-renderLevel Level{tiles, start, finish} = rendered
+renderLevel level = renderLevel' level $ const Nothing
+
+-- Render a Level in a human-friendly format. Given a custom render function,
+-- it can render certain tiles differently based on their position. This allows
+-- consumers to mark tiles of interest.
+renderLevel' :: Level -> (Position -> Maybe String) -> String
+renderLevel' Level{tiles, start, finish} render = rendered
  where
   positions = fromMaybe (error "renderLevel: impossible: level has no tiles") $ nonEmpty $ keys tiles
   columns = fst <$> positions
@@ -88,19 +95,24 @@ renderLevel Level{tiles, start, finish} = rendered
   maxColumn = maximum1 columns
   minRow = minimum1 rows
   maxRow = maximum1 rows
+  renderPosition (x, y) = case render (x, y) of
+    Just s -> s
+    Nothing | (x, y) == start -> "S"
+    Nothing | (x, y) == finish -> "F"
+    Nothing -> maybe "X" renderTile (lookup (x, y) tiles)
 {- FOURMOLU_DISABLE -}
   rendered =
-    ['┌'] ++ [ '─' | _ <- [minColumn..maxColumn] ] ++ ['┐'] ++ ['\n']
+    -- Draw the top border.
+    ['┌'] ++ ['─' | _ <- [minColumn..maxColumn]] ++ ['┐'] ++ ['\n']
+    -- Draw the level's tiles.
     ++ concat [
-        ['│']
-        ++
-          concat [
-            if (c, r) == start then "S" else
-            if (c, r) == finish then "F" else
-            maybe "X" renderTile (lookup (c, r) tiles)
-          | c <- [minColumn..maxColumn] ]
-        ++
-        ['│'] ++ ['\n']
-      | r <- reverse [minRow..maxRow] ]
-    ++ ['└'] ++ [ '─' | _ <- [minColumn..maxColumn] ] ++ ['┘']
+        -- Draw the left border.
+        ['│'] ++
+        -- Draw the tile.
+        concat [ renderPosition (c, r) | c <- [minColumn..maxColumn] ]
+        -- Draw the right border.
+        ++ ['│'] ++ ['\n']
+    | r <- reverse [minRow..maxRow] ]
+    -- Draw the bottom border.
+    ++ ['└'] ++ ['─' | _ <- [minColumn..maxColumn]] ++ ['┘']
 {- FOURMOLU_ENABLE -}
