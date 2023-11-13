@@ -1,28 +1,27 @@
 module Games.CosmicExpress.Levels (
   Tile (..),
   Color (..),
-  Orientation (..),
+  Piece (..),
   Position,
   Level (..),
-  Grid (..),
   renderLevel,
 ) where
 
 import Relude
-import Relude.Extra.Map (lookup)
+import Relude.Extra.Map (keys, lookup)
 
-import Data.Aeson (FromJSON (..), ToJSON (..), Value, object, withObject, (.:), (.=))
-import Data.Aeson.Types (Parser)
+import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.ByteString qualified as BS
-import Math.Geometry.Grid (Index, size)
-import Math.Geometry.Grid.Square (RectSquareGrid, rectSquareGrid)
-import Math.Geometry.Grid.SquareInternal (RectSquareGrid (..))
 import Rainbow (Chunk, bold, chunksToByteStrings, color256, fore, inverse, toByteStringsColors256)
+import Relude.Extra.Foldable1 (Foldable1 (minimum1), maximum1)
 
+-- The color of a Critter or House.
 data Color = Purple | Orange
   deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
-data Orientation
+-- A single track piece. A track piece is defined by the edges of the tile that
+-- the piece connects.
+data Piece
   = NS
   | EW
   | NE
@@ -31,14 +30,19 @@ data Orientation
   | SW
   deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
+-- A tile on the game board.
 data Tile
-  = Track Orientation
+  = Track Piece
   | Critter {color :: Color, completed :: Bool}
   | House {color :: Color, completed :: Bool}
+  | Empty
   deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
--- Returns a string for the sake of colorizing ANSI codes. Make sure that this
--- string is always one-width, otherwise the grid layout will break.
+-- Render a Tile in a human-friendly format for display inside a Level.
+--
+-- This function returns a string so it can use ANSI codes for color and
+-- styling. Make sure that this string is always one-width, otherwise the grid
+-- layout will break.
 renderTile :: Tile -> String
 renderTile = \case
   Track t -> case t of
@@ -50,6 +54,7 @@ renderTile = \case
     SW -> "╗"
   Critter c done -> renderChunk $ colorize c $ if done then "c" else bold "C"
   House c done -> renderChunk $ colorize c $ if done then "h" else bold "H"
+  Empty -> " "
  where
   -- For a lookup table of colors, see https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit.
   colorize :: Color -> Chunk -> Chunk
@@ -59,61 +64,43 @@ renderTile = \case
   renderChunk :: Chunk -> String
   renderChunk c = decodeUtf8 $ BS.concat $ chunksToByteStrings toByteStringsColors256 [c]
 
--- This is a newtype wrapper over RectSquareGrid so that we can define extra
--- instances.
-newtype Grid = Grid RectSquareGrid
-  deriving (Eq, Show)
-
-instance Ord Grid where
-  compare :: Grid -> Grid -> Ordering
-  compare _ _ = EQ
-
-instance ToJSON Grid where
-  toJSON :: Grid -> Value
-  toJSON (Grid (RectSquareGrid (r, c) _)) = object ["rows" .= r, "columns" .= c]
-
-instance FromJSON Grid where
-  parseJSON :: Value -> Parser Grid
-  parseJSON = withObject "Grid" $ \o -> do
-    rows <- o .: "rows"
-    columns <- o .: "columns"
-    pure $ Grid $ rectSquareGrid rows columns
-
-type Position = Index RectSquareGrid
+type Position = (Int, Int)
 
 data Level = Level
-  { -- Only non-empty tiles are stored in the map.
+  { -- All board tiles are stored on the map.
+    --
+    -- (0, 0) is the bottom left corner. Row number goes up as tile positions go
+    -- upwards. Column number goes up as tile positions go rightwards.
     tiles :: Map Position Tile
   , start :: Position
   , finish :: Position
-  , -- (0, 0) is the bottom left corner. Row number goes up as tile positions go
-    -- upwards. Column number goes up as tile positions go rightwards.
-    --
-    -- See visualization at https://github.com/mhwombat/grid/wiki/Square-tiles.
-    -- We need to match this visualization so that Directions from the grid
-    -- library work as expected.
-    grid :: Grid
   }
   deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
 
-{- FOURMOLU_DISABLE -}
+-- Render a Level in a human-friendly format.
 renderLevel :: Level -> String
-renderLevel Level{tiles, start, finish, grid = Grid grid} =
-  ['┌'] ++ [ '─' | _ <- [0..columns-1] ] ++ ['┐'] ++ ['\n']
-  ++ concat [
-    ['│']
-    ++
-    concat [
-      if (c, r) == start then "S" else
-      if (c, r) == finish then "F" else
-      maybe " " renderTile (lookup (c, r) tiles)
-    | c <- [0..columns-1] ]
-    ++
-    ['│']
-    ++
-    ['\n']
-  | r <- reverse [0..rows-1] ]
-  ++ ['└'] ++ [ '─' | _ <- [0..columns-1] ] ++ ['┘']
+renderLevel Level{tiles, start, finish} = rendered
  where
-  (rows, columns) = size grid
+  positions = fromMaybe (error "renderLevel: impossible: level has no tiles") $ nonEmpty $ keys tiles
+  columns = fst <$> positions
+  rows = snd <$> positions
+  minColumn = minimum1 columns
+  maxColumn = maximum1 columns
+  minRow = minimum1 rows
+  maxRow = maximum1 rows
+{- FOURMOLU_DISABLE -}
+  rendered =
+    ['┌'] ++ [ '─' | _ <- [minColumn..maxColumn] ] ++ ['┐'] ++ ['\n']
+    ++ concat [
+        ['│']
+        ++
+          concat [
+            if (c, r) == start then "S" else
+            if (c, r) == finish then "F" else
+            maybe "X" renderTile (lookup (c, r) tiles)
+          | c <- [minColumn..maxColumn] ]
+        ++
+        ['│'] ++ ['\n']
+      | r <- reverse [minRow..maxRow] ]
+    ++ ['└'] ++ [ '─' | _ <- [minColumn..maxColumn] ] ++ ['┘']
 {- FOURMOLU_ENABLE -}
