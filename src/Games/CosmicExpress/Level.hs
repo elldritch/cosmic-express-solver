@@ -1,4 +1,4 @@
-module Games.CosmicExpress.Levels (
+module Games.CosmicExpress.Level (
   Tile (..),
   Color (..),
   Piece (..),
@@ -8,12 +8,14 @@ module Games.CosmicExpress.Levels (
 ) where
 
 import Relude
+import Relude.Extra.Foldable1 (Foldable1 (minimum1), maximum1)
 import Relude.Extra.Map (keys, lookup)
 
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.ByteString qualified as BS
 import Rainbow (Chunk, bold, chunksToByteStrings, color256, fore, inverse, toByteStringsColors256)
-import Relude.Extra.Foldable1 (Foldable1 (minimum1), maximum1)
+
+import Games.CosmicExpress.Level.Board (Board, Position)
 
 -- The color of a Critter or House.
 data Color = Purple | Orange
@@ -64,14 +66,12 @@ renderTile = \case
   renderChunk :: Chunk -> String
   renderChunk c = decodeUtf8 $ BS.concat $ chunksToByteStrings toByteStringsColors256 [c]
 
-type Position = (Int, Int)
-
 data Level = Level
-  { -- All board tiles are stored on the map.
+  { -- All valid board tiles, including empty ones, are stored in the map.
     --
     -- (0, 0) is the bottom left corner. Row number goes up as tile positions go
     -- upwards. Column number goes up as tile positions go rightwards.
-    tiles :: Map Position Tile
+    tiles :: Board Tile
   , start :: Position
   , finish :: Position
   }

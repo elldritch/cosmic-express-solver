@@ -21,7 +21,7 @@ import Options.Applicative (
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 
-import Games.CosmicExpress.Levels (renderLevel)
+import Games.CosmicExpress.Level (renderLevel)
 import Games.CosmicExpress.Levels.Andromeda qualified as Andromeda
 import Games.CosmicExpress.Solve (solve)
 

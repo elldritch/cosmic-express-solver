@@ -2,7 +2,7 @@ module Games.CosmicExpress.Levels.Andromeda (levels) where
 
 import Relude
 
-import Games.CosmicExpress.Levels (Color (..), Level (..), Position, Tile (..))
+import Games.CosmicExpress.Level (Color (..), Level (..), Position, Tile (..))
 
 levels :: IntMap Level
 levels = fromList $ zip [1 ..] [l1, l2, l3, l4, l5]

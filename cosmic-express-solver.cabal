@@ -46,7 +46,8 @@ library
 
   -- cabal-fmt: expand src
   exposed-modules:
-    Games.CosmicExpress.Levels
+    Games.CosmicExpress.Level
+    Games.CosmicExpress.Level.Board
     Games.CosmicExpress.Levels.Andromeda
     Games.CosmicExpress.Solve
 

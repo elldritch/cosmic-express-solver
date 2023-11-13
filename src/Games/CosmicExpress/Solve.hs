@@ -8,7 +8,7 @@ import Data.Aeson (ToJSON (..), Value, encode)
 import Math.Geometry.Grid (neighbour, neighbours)
 import Math.Geometry.Grid.SquareInternal (SquareDirection (..), rectSquareGrid)
 
-import Games.CosmicExpress.Levels (
+import Games.CosmicExpress.Level (
   Color (..),
   Level (..),
   Piece (..),
