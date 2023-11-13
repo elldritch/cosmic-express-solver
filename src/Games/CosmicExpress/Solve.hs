@@ -30,8 +30,9 @@ data Step = Step
     -- This tile is currently empty in this step.
     --
     -- When simulating the train, we model this as the position that the train
-    -- engine is currently in. This lines up well with our end condition of the
-    -- tip ending in the finish tile, which is where the train engine would be.
+    -- engine is currently in. This lines up well with our chosen end condition
+    -- in `found` of the tip ending in the finish tile, which is where the train
+    -- engine would be.
     tip :: Position
   , -- The previous tile that was placed. This tile has a track piece in it.
     --
@@ -225,13 +226,15 @@ deliverCritters step@Step{level = level@Level{tiles}, train, previousPosition, p
     -- The house must match the color of the critter. If there are two such
     -- houses, we pick houses in priority order of their relative bearing:
     --
-    -- 1. Forward
-    -- 2. Rightwards
-    -- 3. Leftwards
-    -- 4. Backwards
+    -- 1. Rightward
+    -- 2. Leftward
+    -- 3. Backward
     --
     -- Note that there cannot be more than two adjacent houses, since two of the
-    -- train car's tile's edges are adjacent to tracks.
+    -- train car's tile's edges are adjacent to tracks. Note that there also can
+    -- never be an adjacent house in the Forward bearing, since the tile in that
+    -- direction will be occupied by the exit track piece (i.e. the current tip
+    -- tile's eventual track piece).
     --
     -- If there is no matching house, exit.
     (position, _) <- firstMatchingHouse critterColor
@@ -245,7 +248,7 @@ deliverCritters step@Step{level = level@Level{tiles}, train, previousPosition, p
   neighborsInPriorityOrder =
     mapMaybe
       (neighbor tiles previousPosition . turn previousExitBearing)
-      [Forward, Rightward, Leftward, Backward]
+      [Rightward, Leftward, Backward]
 
   firstMatchingHouse :: Color -> Maybe (Position, Tile)
   firstMatchingHouse c =
