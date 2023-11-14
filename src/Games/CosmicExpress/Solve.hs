@@ -2,55 +2,36 @@ module Games.CosmicExpress.Solve (solve) where
 
 import Relude
 import Relude.Extra.Foldable1 (maximum1)
-import Relude.Extra.Map (elems, insert, toPairs)
+import Relude.Extra.Map (insert, toPairs)
 
 import Algorithm.Search (aStarAssoc)
-import Data.Aeson (ToJSON (..), encode)
+import Data.Aeson (encode)
 
+import Games.CosmicExpress.Debug (debugLn, debugWith)
 import Games.CosmicExpress.Level (
   Color (..),
   Level (..),
   Piece (..),
   Position,
   Tile (..),
+  isCritter,
+  isEmpty,
+  isHouse',
   renderLevel',
  )
-import Games.CosmicExpress.Level.Board (Bearing (..), Cardinal (..), cardinals, distance, neighbor, neighbors, turn)
+import Games.CosmicExpress.Level.Board (
+  Bearing (..),
+  Cardinal (..),
+  cardinals,
+  distance,
+  neighbor,
+  neighbors,
+  turn,
+ )
+import Games.CosmicExpress.Solve.Solvability (solvable, solved)
+import Games.CosmicExpress.Solve.Step (Step (..))
 
--- Enable debug tracing.
-debug :: Bool
-debug = False
-
--- A Step represents a snapshot of game with a partial solution. It captures a
--- set of tracks laid down and tracks the state of the train as it follows those
--- tracks.
-data Step = Step
-  { -- The level we're currently solving.
-    level :: Level
-  , -- The "tip" is the next tile that needs to have a track piece placed in it.
-    -- This tile is currently empty in this step.
-    --
-    -- When simulating the train, we model this as the position that the train
-    -- engine is currently in. This lines up well with our chosen end condition
-    -- in `found` of the tip ending in the finish tile, which is where the train
-    -- engine would be.
-    tip :: Position
-  , -- The previous tile that was placed. This tile has a track piece in it.
-    --
-    -- When simulating the train, we model this as the position that the train
-    -- car is currently in.
-    previousPosition :: Position
-  , -- The bearing of the train car as it exits the previous tile that was
-    -- placed.
-    previousExitBearing :: Cardinal
-  , -- The critter currently in the train.
-    train :: Maybe Color
-  }
-  deriving (Eq, Ord, Show, Generic, ToJSON)
-
--- Render the step. Mostly useful for debugging.
---
--- TODO: Mark the train positions.
+-- Render a step for debugging.
 _renderStep :: String -> Step -> String
 _renderStep prefix s@Step{level, tip, train, previousPosition} = rendered
  where
@@ -65,6 +46,7 @@ _renderStep prefix s@Step{level, tip, train, previousPosition} = rendered
     renderLevel' level renderer ++ "\n" ++
     "Train: " ++ show train ++ "\n" ++
     "Tip: " ++ show tip ++ "\n" ++
+    "Heuristic: " ++ show (heuristic s) ++ "\n" ++
     "Solvable: " ++ show (solvable s) ++ "\n" ++
     "Show: " ++ show s ++ "\n" ++
     "JSON: " ++ decodeUtf8 (encode s)
@@ -106,17 +88,13 @@ initial level =
   -- East.
   previousPosition = let (x, y) = start in (x - 1, y)
 
--- We have reached our destination if all of the following are true:
---
--- 1. We have reached the finish tile.
--- 2. Every critter has been delivered to its house.
+-- We have reached our destination the level is solved
 --
 -- We can now trivially complete the track by connecting the finish tile.
 found :: Step -> Bool
-found s@Step{level = Level{tiles, finish}, tip} =
-  debugFound $ tip == finish && not (any incomplete (elems tiles))
+found step = debugFound $ solved step
  where
-  debugFound = if debug then trace (_renderStep "Testing" s ++ "\n") else id
+  debugFound = debugLn $ _renderStep "Testing" step
 
 -- For A* search, we need a heuristic function that never overestimates the
 -- distance to the goal. We use the maximum Manhattan distance from the tip to
@@ -144,11 +122,14 @@ heuristic Step{level = Level{tiles, finish}, tip} =
 --
 next :: Step -> [Step]
 next step@Step{level = level@Level{tiles}, tip, previousExitBearing} = debugNext $ do
+  -- Abort if the current track is no longer solvable.
+  guard $ solvable step
+
   -- Select a next tile to try.
   direction <- cardinals
   (position, tile) <- maybeToList $ neighbor tiles tip direction
   -- Make sure the selected tile is empty.
-  guard $ tile == Empty
+  guard $ isEmpty tile
   -- Place a track piece to the new selected tip, and update the tip and
   -- previous positions.
   let step' =
@@ -162,20 +143,17 @@ next step@Step{level = level@Level{tiles}, tip, previousExitBearing} = debugNext
   -- Simulate the arrival of the train car to the new tip.
   let step'' = simulateTrain step'
 
-  -- Determine whether the proposed track is still solvable.
-  guard $ solvable step''
-
   pure step''
  where
   debugNext :: [Step] -> [Step]
-  debugNext nexts = if debug then trace message nexts else nexts
+  debugNext = debugWith message
    where
 {- FOURMOLU_DISABLE -}
-    message =
-      _renderStep "Current" step
-        ++ "\n"
-        ++ "Nexts: " ++ show (length nexts) ++ "\n"
-        ++ concat [_renderStep ("Next " ++ show i) n ++ "\n" | (i, n) <- zip ([1 ..] :: [Int]) nexts]
+    message nexts =
+      _renderStep "Current" step ++ "\n" ++
+        "\n" ++
+        "Nexts: " ++ show (length nexts) ++ "\n" ++
+        concat [_renderStep ("Next " ++ show i) n ++ "\n" | (i, n) <- zip ([1 ..] :: [Int]) nexts]
 {- FOURMOLU_ENABLE -}
 
 -- @connect a b@ computes the track piece that connects an existing tile facing
@@ -208,14 +186,6 @@ connect start end = case start of
  where
   doublesBack = error "Impossible: track piece doubles back on itself"
 
--- Determine whether a tile contains an incomplete objective.
---
--- Useful as @any incomplete@.
-incomplete :: Tile -> Bool
-incomplete (Critter _ False) = True
-incomplete (House _ False) = True
-incomplete _ = False
-
 -- Simulate the arrival of the train engine to the tip tile (and therefore the
 -- train car to the previous tile).
 simulateTrain :: Step -> Step
@@ -232,7 +202,7 @@ deliverCritters :: Step -> Step
 deliverCritters step@Step{level = level@Level{tiles}, train, previousPosition, previousExitBearing} =
   fromMaybe step $ do
     -- If the train has no critter, exit.
-    critterColor <- train
+    color <- train
     -- If the train has a critter, look for a house to deliver it to.
     --
     -- The house must match the color of the critter. If there are two such
@@ -249,10 +219,10 @@ deliverCritters step@Step{level = level@Level{tiles}, train, previousPosition, p
     -- tile's eventual track piece).
     --
     -- If there is no matching house, exit.
-    (position, _) <- firstMatchingHouse critterColor
+    (position, _) <- firstMatchingHouse color
     pure
       step
-        { level = level{tiles = insert position (House critterColor True) tiles}
+        { level = level{tiles = insert position (House color True) tiles}
         , train = Nothing
         }
  where
@@ -263,13 +233,7 @@ deliverCritters step@Step{level = level@Level{tiles}, train, previousPosition, p
       [Rightward, Leftward, Backward]
 
   firstMatchingHouse :: Color -> Maybe (Position, Tile)
-  firstMatchingHouse c =
-    find
-      ( \(_, tile) -> case tile of
-          House h False -> c == h
-          _ -> False
-      )
-      neighborsInPriorityOrder
+  firstMatchingHouse c = find (isHouse' c . snd) neighborsInPriorityOrder
 
 -- Pick up a critter adjacent to the train car.
 pickupCritters :: Step -> Step
@@ -295,16 +259,3 @@ pickupCritters step@Step{level = level@Level{tiles}, train, previousPosition} = 
             , level = level{tiles = insert p (Critter c True) tiles}
             }
       _ -> mzero
-   where
-    isCritter (Critter _ False) = True
-    isCritter _ = False
-
--- Return False if the current track is obviously unsolvable.
-solvable :: Step -> Bool
-solvable Step{level = Level{finish, tiles}, tip} =
-  -- If we're at the finish tile and there are incomplete objectives, then the
-  -- current track is obviously unsolvable, since we cannot possibly double back
-  -- to reach objectives after already arriving at the finish tile.
-  --
-  -- TODO: Add more heuristics here.
-  (tip /= finish) || not (any incomplete (elems tiles))

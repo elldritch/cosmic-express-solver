@@ -45,10 +45,13 @@ library
 
   -- cabal-fmt: expand src
   exposed-modules:
+    Games.CosmicExpress.Debug
     Games.CosmicExpress.Level
     Games.CosmicExpress.Level.Board
     Games.CosmicExpress.Levels.Andromeda
     Games.CosmicExpress.Solve
+    Games.CosmicExpress.Solve.Solvability
+    Games.CosmicExpress.Solve.Step
 
 executable cosmic-solver
   import:         options

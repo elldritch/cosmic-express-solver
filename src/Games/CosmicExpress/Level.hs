@@ -1,5 +1,10 @@
 module Games.CosmicExpress.Level (
   Tile (..),
+  isCritter,
+  isHouse,
+  isHouse',
+  isEmpty,
+  isIncomplete,
   Color (..),
   Piece (..),
   Position,
@@ -40,6 +45,32 @@ data Tile
   | House {color :: Color, completed :: Bool}
   | Empty
   deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
+
+-- Returns True if the Tile contains a Critter that has not yet been picked up.
+isCritter :: Tile -> Bool
+isCritter (Critter _ False) = True
+isCritter _ = False
+
+-- Returns True if the Tile contains a House that has not yet been filled.
+isHouse :: Tile -> Bool
+isHouse (House _ False) = True
+isHouse _ = False
+
+-- Like `isHouse`, but for Houses of a specific Color.
+isHouse' :: Color -> Tile -> Bool
+isHouse' c (House h False) = c == h
+isHouse' _ _ = False
+
+-- Returns True if the Tile is Empty.
+isEmpty :: Tile -> Bool
+isEmpty Empty = True
+isEmpty _ = False
+
+-- Returns True if the Tile contains an objective that is incomplete.
+isIncomplete :: Tile -> Bool
+isIncomplete (Critter _ False) = True
+isIncomplete (House _ False) = True
+isIncomplete _ = False
 
 -- Render a Tile in a human-friendly format for display inside a Level.
 --
