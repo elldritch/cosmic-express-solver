@@ -1,2 +1,4 @@
 dist-newstyle/
 data/
+cabal.project.local
+*.prof

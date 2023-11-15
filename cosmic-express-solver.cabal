@@ -55,7 +55,7 @@ library
 
 executable cosmic-solver
   import:         options
-  ghc-options:    -threaded
+  ghc-options:    -threaded -funfolding-use-threshold=16 -O2 -optc-O3 -rtsopts
   build-depends:
     , aeson                  ==2.2.1.0
     , base                   ==4.17.2.0

@@ -16,6 +16,7 @@ import Options.Applicative (
   long,
   option,
   strOption,
+  switch,
   value,
  )
 import System.Directory (createDirectoryIfMissing)
@@ -29,6 +30,7 @@ data Options = Options
   { dataDir :: FilePath
   , constellation :: Text
   , level :: Int
+  , noCache :: Bool
   }
 
 optionsP :: Parser Options
@@ -37,6 +39,7 @@ optionsP =
     <$> strOption (long "datadir" <> value "data" <> help "Path to directory where results are saved")
     <*> strOption (long "constellation" <> help "Constellation name")
     <*> option auto (long "level" <> help "Level number")
+    <*> switch (long "no-cache" <> help "Skip loading from and saving to cache")
 
 argparser :: ParserInfo Options
 argparser = info (optionsP <**> helper) mempty
@@ -44,7 +47,7 @@ argparser = info (optionsP <**> helper) mempty
 main :: IO ()
 main = do
   hSetBuffering stdout NoBuffering
-  Options{dataDir, constellation, level} <- execParser argparser
+  Options{dataDir, constellation, level, noCache} <- execParser argparser
 
   case constellation of
     "andromeda" -> do
@@ -58,18 +61,22 @@ main = do
           let
             folderPath = dataDir </> "andromeda" </> show level
             filePath = folderPath </> "answer.json"
-          createDirectoryIfMissing True folderPath
-          -- If the solution has already been saved, load solution from file.
-          result <- try $ readFileBS filePath
-          maybeContents <- case result of
-            Right bs -> pure $ Just bs
-            Left (_ :: IOException) -> pure Nothing
+          maybeContents <-
+            if noCache
+              then pure Nothing
+              else do
+                createDirectoryIfMissing True folderPath
+                -- If the solution has already been saved, load solution from file.
+                result <- try $ readFileBS filePath
+                case result of
+                  Right bs -> pure $ Just bs
+                  Left (_ :: IOException) -> pure Nothing
           -- Otherwise, solve and save the solution.
           solution <- case maybeContents >>= decodeStrict of
             Just saved -> pure saved
             Nothing -> do
               let solution = solve l
-              writeFileLBS filePath $ encode solution
+              unless noCache $ writeFileLBS filePath $ encode solution
               pure solution
           -- Display the results.
           putStrLn "Solution:"

@@ -25,5 +25,6 @@ datadir/
 TODO:
 
 - Save `proof.json` for each level, and have a mode that displays a simulation of the train as a verification of the puzzle solution.
+- Save `debug.ndjson` for each level, for showing intermediate states.
 
 -->
