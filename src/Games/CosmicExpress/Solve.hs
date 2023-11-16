@@ -1,4 +1,4 @@
-module Games.CosmicExpress.Solve (solve) where
+module Games.CosmicExpress.Solve (solve, solve') where
 
 import Relude
 import Relude.Extra.Foldable1 (maximum1)
@@ -6,7 +6,10 @@ import Relude.Extra.Map (insert, toPairs)
 
 import Algorithm.Search (aStarAssoc)
 import Data.Aeson (encode)
+import FastDownward (SolveResult (..), newVar, readVar, runProblem, totallyOrderedPlan, writeVar, (?=))
+import FastDownward qualified (solve)
 
+import FastDownward.Exec (SearchConfiguration (SearchConfiguration), bjolp)
 import Games.CosmicExpress.Debug (debugLn, debugWith)
 import Games.CosmicExpress.Level (
   Color (..),
@@ -52,11 +55,31 @@ _renderStep prefix s@Step{level, tip, train, previousPosition} = rendered
     "JSON: " ++ decodeUtf8 (encode s)
 {- FOURMOLU_ENABLE -}
 
+solve :: Level -> IO [Int]
+solve _ = do
+  putStrLn "A"
+  result <- runProblem $ do
+    putStrLn "B"
+    counter <- newVar @Int 0
+    putStrLn "C"
+    let
+      increment = do
+        i <- readVar counter
+        writeVar counter $ (i + 1) `mod` 10
+        pure i
+      incremented = counter ?= 2
+    putStrLn "D"
+    FastDownward.solve bjolp [increment] [incremented]
+  putStrLn "E"
+  case result of
+    Solved solution -> pure $ totallyOrderedPlan solution
+    err -> print err >> exitFailure
+
 -- Solve a level.
 --
 -- We solve levels using a graph search through possible game states.
-solve :: Level -> Level
-solve level = case solution of
+solve' :: Level -> Level
+solve' level = case solution of
   Nothing -> error "Impossible: no solution found"
   Just s -> s
  where

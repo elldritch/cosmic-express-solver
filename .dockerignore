@@ -1,0 +1,8 @@
+Dockerfile
+.ghci
+.git
+.gitignore
+.scratch
+*.prof
+data
+dist-newstyle

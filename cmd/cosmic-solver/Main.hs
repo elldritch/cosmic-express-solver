@@ -75,10 +75,11 @@ main = do
           solution <- case maybeContents >>= decodeStrict of
             Just saved -> pure saved
             Nothing -> do
-              let solution = solve l
+              solution <- solve l
               unless noCache $ writeFileLBS filePath $ encode solution
               pure solution
           -- Display the results.
           putStrLn "Solution:"
-          putStrLn $ renderLevel solution
+          print solution
+          -- putStrLn $ renderLevel solution
     _ -> putStrLn "Invalid constellation name" >> exitFailure
